@@ -3,46 +3,29 @@ import json
 import re
 from pathlib import Path
 from typing import List
-
 import pymupdf as fitz
 from dotenv import load_dotenv
 from groq import Groq
 from pydantic import BaseModel, Field, ValidationError
-
-
-# =====================================================
-# 1. CONFIGURATION
-# =====================================================
-
 load_dotenv()
 
 API_KEY = os.getenv("GROQ_API_KEY")
 if not API_KEY:
     raise ValueError("GROQ_API_KEY not found in .env file")
-
 client = Groq(api_key=API_KEY)
 MODEL = "openai/gpt-oss-20b"
-
-# Update this path to your resume folder.
 RESUME_FOLDER = Path(
     r"C:\Users\adity\OneDrive\Desktop\padho-ai-engineer\week1\day5\resumes"
 )
-
 OUTPUT_FOLDER = RESUME_FOLDER / "results"
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
-
-
-# =====================================================
 # 2. PYDANTIC MODELS
-# =====================================================
-
 class Education(BaseModel):
     institution: str = ""
     degree: str = ""
     field_of_study: str = ""
     start_date: str = ""
     end_date: str = ""
-
 
 class Experience(BaseModel):
     company: str = ""
@@ -51,12 +34,10 @@ class Experience(BaseModel):
     start_date: str = ""
     end_date: str = ""
 
-
 class Project(BaseModel):
     name: str = ""
     description: str = ""
     technologies: List[str] = Field(default_factory=list)
-
 
 class ResumeData(BaseModel):
     name: str = ""
@@ -66,7 +47,6 @@ class ResumeData(BaseModel):
     education: List[Education] = Field(default_factory=list)
     experience: List[Experience] = Field(default_factory=list)
     projects: List[Project] = Field(default_factory=list)
-
 
 class MatchResult(BaseModel):
     skills_score: float = 0
@@ -79,19 +59,12 @@ class MatchResult(BaseModel):
     evidence: List[str] = Field(default_factory=list)
     recommendation: str = "Moderate Match"
 
-
 class ResumeEvaluation(BaseModel):
     resume: ResumeData
     evaluation: MatchResult
-
-
-# =====================================================
 # 3. JOB DESCRIPTION
-# =====================================================
-
 job_description = """
 We are hiring a Python Developer.
-
 Required skills:
 - Python
 - FastAPI
@@ -105,21 +78,13 @@ Preferred:
 - Relevant projects
 """
 
-
-# =====================================================
 # 4. PROMPTS
-# =====================================================
-
 schema = ResumeEvaluation.model_json_schema()
-
 system_prompt = f"""
 You are a resume information extraction and job matching assistant.
-
 Extract resume information and evaluate it against the job description.
 Return one JSON object matching this schema exactly:
-
 {json.dumps(schema, indent=2)}
-
 Rules:
 1. Use only information explicitly present in the resume.
 2. Never invent skills, experience, education, or projects.
@@ -146,12 +111,7 @@ overall_score = skills_score*0.40 + experience_score*0.25
 
 Return only valid JSON. Do not use Markdown fences.
 """
-
-
-# =====================================================
 # 5. PDF TEXT EXTRACTION
-# =====================================================
-
 def extract_pdf_text(pdf_path: Path) -> str:
     pages_text = []
 
@@ -160,12 +120,7 @@ def extract_pdf_text(pdf_path: Path) -> str:
             pages_text.append(page.get_text())
 
     return "\n".join(pages_text).strip()
-
-
-# =====================================================
 # 6. GROQ JSON CALL
-# =====================================================
-
 def call_groq_json(messages: list) -> dict:
     response = client.chat.completions.create(
         model=MODEL,
@@ -187,12 +142,7 @@ def call_groq_json(messages: list) -> dict:
         return json.loads(answer)
     except json.JSONDecodeError as exc:
         raise ValueError(f"Groq returned invalid JSON: {exc}\nResponse:\n{answer}")
-
-
-# =====================================================
 # 7. RESUME EVALUATION
-# =====================================================
-
 def evaluate_resume(resume_text: str) -> ResumeEvaluation:
     user_prompt = f"""
 JOB DESCRIPTION:
@@ -212,14 +162,10 @@ Return only the JSON object matching the schema.
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ])
-
-    # Some model responses may omit the required evaluation object.
-    # If so, make a second call asking it to complete the missing field.
     if not isinstance(raw_data, dict):
         raise ValueError("Groq response must be a JSON object")
 
     if "resume" not in raw_data:
-        # Sometimes the model returns the resume object directly.
         expected_resume_fields = set(ResumeData.model_fields.keys())
         if expected_resume_fields.intersection(raw_data.keys()):
             raw_data = {"resume": raw_data}
@@ -247,21 +193,12 @@ Return only valid JSON.
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": repair_prompt}
         ])
-
-        # Preserve the original extracted resume if repair omitted it.
         if isinstance(repaired, dict):
             if "resume" not in repaired and "resume" in raw_data:
                 repaired["resume"] = raw_data["resume"]
             raw_data = repaired
-
-    # Final validation. This will raise a useful Pydantic error if malformed.
     return ResumeEvaluation.model_validate(raw_data)
-
-
-# =====================================================
 # 8. SAVE RESULT TO JSON
-# =====================================================
-
 def save_result(filename: str, result: ResumeEvaluation) -> Path:
     safe_name = re.sub(r'[<>:"/\\|?*]', "_", Path(filename).stem)
     output_path = OUTPUT_FOLDER / f"{safe_name}_result.json"
@@ -276,11 +213,7 @@ def save_result(filename: str, result: ResumeEvaluation) -> Path:
 
     print(f"\nResult saved to: {output_path}")
     return output_path
-
-
-# =====================================================
 # 9. DISPLAY RESULT
-# =====================================================
 
 def display_result(result: ResumeEvaluation) -> None:
     resume = result.resume
@@ -333,13 +266,8 @@ def display_result(result: ResumeEvaluation) -> None:
     for item in evaluation.evidence:
         print("-", item)
 
-    print("\nRecommendation:", evaluation.recommendation)
-
-
-# =====================================================
+    print("\nRecommendation:", evaluation.recommendation
 # 10. PROCESS ALL RESUMES
-# =====================================================
-
 def main() -> None:
     if not RESUME_FOLDER.exists():
         raise FileNotFoundError(f"Resume folder not found: {RESUME_FOLDER}")
